@@ -82,15 +82,11 @@ class PulseMonitor {
     const blob = new Blob([code], { type: 'text/javascript' });
     this.worker = new Worker(URL.createObjectURL(blob));
 
-    // Обработка вердиктов воркера и управление очередью
     this.worker.addEventListener('message', (e) => {
       const { res, avg } = e.data;
-
       this.updateUI(res.st, avg);
-
       if (res.st === 'err') this.sendImmediate(res);
       else this.queue.push(res);
-
       if (this.queue.length >= this.batchSize) this.send();
     });
   }
@@ -99,7 +95,6 @@ class PulseMonitor {
     const now = Date.now();
     const delta = now - this.last;
     this.last = now;
-
     this.worker.postMessage({
       type,
       val: typeof meta === 'number' ? meta : delta,
@@ -112,8 +107,6 @@ class PulseMonitor {
   bind() {
     let user = false;
     let userTimer;
-    
-    // Трекинг пользовательского фокуса (TTL 1s)
     const mark = () => { 
         user = true; 
         clearTimeout(userTimer);
@@ -129,7 +122,6 @@ class PulseMonitor {
       this.tick('key', { ctx: 'user' });
     });
 
-    // Инъекция в сетевой стек для анализа контекста вызова
     const oldFetch = window.fetch;
     window.fetch = (...a) => {
       this.tick('fetch', {
@@ -148,7 +140,6 @@ class PulseMonitor {
       return oldBeacon.apply(navigator, a);
     };
 
-    // Наблюдение за блокировками потока
     if ('PerformanceObserver' in window) {
       const obs = new PerformanceObserver((list) => {
         list.getEntries().forEach(e => {
@@ -158,19 +149,15 @@ class PulseMonitor {
       obs.observe({ entryTypes:['longtask'] });
     }
 
-    // Мониторинг жизненного цикла и активности дочерних воркеров
     const OldWorker = window.Worker;
     window.Worker = (...a) => {
       const w = new OldWorker(...a);
-
       this.tick('worker_create', { ctx:'hidden' });
-
       const oldPost = w.postMessage;
       w.postMessage = (...m) => {
         this.tick('worker_msg', { ctx:'hidden' });
         return oldPost.apply(w, m);
       };
-
       return w;
     };
   }
@@ -179,8 +166,6 @@ class PulseMonitor {
     if (!this.queue.length || !this.url) return;
     const body = JSON.stringify({ sid:this.sid, data:this.queue });
     this.queue = [];
-    
-    // Использование нативных методов во избежание циклического перехвата
     if (this.originalBeacon) {
         this.originalBeacon(this.url, body);
     } else {
@@ -191,7 +176,6 @@ class PulseMonitor {
   sendImmediate(data) {
     if (!this.url) return;
     const body = JSON.stringify({ sid:this.sid, data:[data] });
-    
     if (this.originalBeacon) {
         this.originalBeacon(this.url, body);
     } else {
@@ -201,42 +185,17 @@ class PulseMonitor {
 
   initUI() {
     this.dot = document.createElement('div');
+    this.dot.id = 'pulse-dot';
     this.dot.style.cssText =
-      'width:10px;height:10px;border-radius:50%;position:fixed;bottom:10px;right:10px;background:#0f0;z-index:9999;';
+      'width:10px;height:10px;border-radius:50%;position:fixed;bottom:10px;right:10px;background:#0f0;z-index:9999;transition: background 0.3s;';
     document.body.appendChild(this.dot);
   }
 
   updateUI(st, avg) {
     const c = { ok:'#0f0', warn:'#ff0', err:'#f00' };
-    this.dot.style.background = c[st];
-    this.dot.title = `${st} | RPS: ${avg}`;
-  }
-}rl, { method:'POST', body, keepalive:true });
+    if (this.dot) {
+      this.dot.style.background = c[st];
+      this.dot.title = `${st} | RPS: ${avg}`;
     }
-  }
-
-  sendImmediate(data) {
-    if (!this.url) return;
-    const body = JSON.stringify({ sid:this.sid, data:[data] });
-    
-    // Use original functions to avoid infinite recursion loop
-    if (this.originalBeacon) {
-        this.originalBeacon(this.url, body);
-    } else {
-        this.originalFetch(this.url, { method:'POST', body, keepalive:true });
-    }
-  }
-
-  initUI() {
-    this.dot = document.createElement('div');
-    this.dot.style.cssText =
-      'width:10px;height:10px;border-radius:50%;position:fixed;bottom:10px;right:10px;background:#0f0;';
-    document.body.appendChild(this.dot);
-  }
-
-  updateUI(st, avg) {
-    const c = { ok:'#0f0', warn:'#ff0', err:'#f00' };
-    this.dot.style.background = c[st];
-    this.dot.title = st + ' | ' + avg;
   }
 }
